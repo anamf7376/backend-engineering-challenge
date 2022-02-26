@@ -19,7 +19,7 @@ public class Main
     public static void main(String[] args) {
     
         String string0="", string1="", string2="", string3="";
- 
+ 		// we need 4 inputs including --input_file and --window_size
    		if (args.length < 4)
    		{
       		System.out.println(" INCORRECT INPUT ");
@@ -33,6 +33,7 @@ public class Main
              string3 = args[3];
             
         }
+        // we check the input format
         String filename="";
         int windowsize=0;
 		if(string0.equals("--input_file"))
@@ -71,8 +72,12 @@ public class Main
 			}
 			
 
+
         Events cal = new Events();
+        
+        // parse the Json file and populate list of objects with timestamp and duration
         cal.parseJson(filename);
+        // calculate average time and dump into output.json
         cal.getDate(windowsize);
     }
 }
@@ -80,6 +85,7 @@ public class Main
 
  class Events {
  
+     // global list to hold transaction logs
      static List<TransactionLog> list = new ArrayList<>();
      static double sum = 0;
      	
@@ -87,52 +93,73 @@ public class Main
      	// calculate average of durations larger than current_time-window_size
     public void getDate(int window_size){
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+        SimpleDateFormat dateFormatOut = new SimpleDateFormat("yyyy-MM-dd HH:mm");//dd/MM/yyyy
+		Date eventDatestart=null;
+		Date eventDateend=null;
+     	Date eventDate=null;
 
-        while(true)
+        try {
+        // remove seconds
+        	eventDatestart = dateFormatOut.parse(list.get(0).timestamp);
+        	eventDateend   = dateFormatOut.parse(list.get(list.size()-1).timestamp);
+        	eventDate= dateFormat.parse(list.get(list.size()-1).timestamp);
+     	       
+        int one_min = 1;
+        Calendar c = Calendar.getInstance();
+        // add 1 min to end if we are higher than the endtime after truncate
+        if(eventDateend.compareTo(eventDate)!=0)
         {
+ 		  c.setTime(eventDateend);
+     	  c.add(Calendar.MINUTE, one_min);
+     	  eventDateend = c.getTime();
+        }
+        
+
+
+        // infinite loop to dump every minute to output.json
+        while(eventDateend.compareTo(eventDatestart)!=-1)
+        {
+           // re-init sum, count to 0.
+           // get current time
            sum=0;
-           Date date = new Date();
-     	   Calendar c = Calendar.getInstance();
-     	   c.setTime(date);
-     	   Date currentDate=c.getTime();
-     	   
+ 		   c.setTime(eventDatestart);
+     	   // current time - window_size in minutes
      	   c.add(Calendar.MINUTE, -window_size);
-     	   Date currentDateMinusWindowSize = c.getTime();
-     	   Date eventDate=null;
+     	   Date eventDatestartMinusWindowSize = c.getTime();
+
      	   int count=0;
-     	   
-     	   try {
-     	   	for(int i = list.size()-1 ; i>=0;i--){
+     	   // traverse the list backwards to find timestamps larger than the one we need
+     	   	for(int i = 0 ; i<list.size();i++){
      	   		
      	   		eventDate = dateFormat.parse(list.get(i).timestamp);
-     	   		int result = eventDate.compareTo(currentDateMinusWindowSize);
-     	   		
-     	   		if(result == 1){
+     	   		int resultst = eventDate.compareTo(eventDatestartMinusWindowSize); //comparing with start of window
+     	   		int resultend = eventDate.compareTo(eventDatestart);                 //comparing with end of window
+				// time from list lies between start and end (both inclusive)
+     	  		if(resultst == 1 && resultend !=1 ){
      	   			sum = sum + list.get(i).duration;
      	   			count++;
      	   		}
-     	   		else 
-     	   		break;
      	   	}
-     	        
-     	   } 
-     	   catch(java.text.ParseException  e) {
-     	   		e.printStackTrace();
-     	   }
      	   
-           
+           // calculate average
+           if(count==0)count++;
      	   sum=sum/count;
      	   SimpleDateFormat dateFormatout = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	
-     	   String datefor=dateFormatout.format(currentDate);
+     	   String datefor=dateFormatout.format(eventDatestart);
+     	   // write output to json file
      	   writeTojson(sum,datefor);
+     	   // increment start date by 1 minute
+     	   c.setTime(eventDatestart);
+     	   c.add(Calendar.MINUTE, one_min);
+     	   eventDatestart = c.getTime();
      	   
-     	   
-     	   try{
-     	   	 TimeUnit.SECONDS.sleep(60);
-     	   } catch (InterruptedException e) { }
 
          }
+         }   catch(java.text.ParseException  e) {
+     	   		e.printStackTrace();
+     	} 
+     	
 
         }
         
@@ -166,14 +193,14 @@ public class Main
 			 try {
            			 br = new BufferedReader(new FileReader(json));
             
-            
+            // keep looping till we get to the end of the file
            		 	while ((sCurrentLine = br.readLine()) != null) {
                
                 	Object obj;
                
                     obj = parser.parse(sCurrentLine);
                     JSONObject jsonObject = (JSONObject) obj;
-
+					// extract timestamp
                     String timestamp = (String) jsonObject.get("timestamp");
                     int count=0,i=0;
                     for(i=0; i<timestamp.length();i++)
@@ -183,12 +210,14 @@ public class Main
                     		count=i;
                     	}
                     }
+                    // we only take 3 decimal places in millisecs
                     if (count!=0)
                     	timestamp=timestamp.substring(0, Math.min(count+4,i));
                     
                     Long duration =  (Long) jsonObject.get("duration");
                     
         			TransactionLog tran = new TransactionLog(timestamp,duration);
+        			// add timestamp and duration to list
         			list.add(tran);
                 } 
                 
